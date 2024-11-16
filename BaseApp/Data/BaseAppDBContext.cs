@@ -77,13 +77,13 @@ namespace BaseApp.Data
                 .Property(a => a.Type)
                 .HasConversion<string>();
 
-/*            modelBuilder.Entity<GiftRequestModel>()
+           modelBuilder.Entity<GiftRequestModel>()
                 .Property(a => a.Status)
-                .HasConversion<string>();*/
-/*
+                .HasConversion<string>();
+
             modelBuilder.Entity<TaskModel>()
                 .Property(t => t.Status)
-                .HasConversion<string>();*/
+                .HasConversion<string>();
 
             modelBuilder.Entity<EmployeeModel>()
                 .HasMany(emp => emp.GiftRequestList)

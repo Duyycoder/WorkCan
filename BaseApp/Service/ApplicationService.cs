@@ -114,14 +114,16 @@ namespace BaseApp.Service
 
         public async Task UpdateApplicationStatus(RequestUpdateApplicationStatusDTO requestUpdateApplicationStatusDTO)
         {
-            ApplicationModel applicationModel = await _repositoryManager.applicationRepository.FindByCondition(a => a.Id == requestUpdateApplicationStatusDTO.ApplicationId).FirstOrDefaultAsync();
+            var applicationModel = await _repositoryManager.applicationRepository.FindByCondition(a => a.Id == requestUpdateApplicationStatusDTO.ApplicationId)
+                .AsNoTracking() // Thêm AsNoTracking để tránh theo dõi
+                .FirstOrDefaultAsync();
 
-            if(applicationModel == null)
+            if (applicationModel == null)
             {
                 throw new Exception(DevMessageConstants.OBJECT_IS_EMPTY);
             }
 
-            if((applicationModel.Status.Equals(EnumTypes.ApplicationStatus.REJECTED)
+            if ((applicationModel.Status.Equals(EnumTypes.ApplicationStatus.REJECTED)
                 || applicationModel.Status.Equals(EnumTypes.ApplicationStatus.APPROVED)
                 && requestUpdateApplicationStatusDTO.ApplicationStatus.Equals(EnumTypes.ApplicationStatus.REQUESTED)))
             {
@@ -133,88 +135,89 @@ namespace BaseApp.Service
             _repositoryManager.applicationRepository.Update(applicationModel);
 
             await _repositoryManager.SaveAsync();
-
         }
+
 
         public async Task<ResponseYearlyStatisticsDTO> GetYearlyStatistics(long empId, int year)
+{
+    var responseYearlyStatisticsDTO = new ResponseYearlyStatisticsDTO();
+
+    // Calculate annual leave
+    var approvedLeaveApplications = await _repositoryManager.applicationRepository
+        .FindByCondition(a => a.EmployeeId == empId
+                              && a.Type == EnumTypes.ApplicationType.LEAVE
+                              && a.Status == EnumTypes.ApplicationStatus.APPROVED
+                              && a.CreatedDate.Year == year)
+        .ToListAsync();
+
+   
+
+    if (approvedLeaveApplications != null)
+    {
+        responseYearlyStatisticsDTO.CountAnnualLeave = approvedLeaveApplications.Count ;
+        responseYearlyStatisticsDTO.DetailLeaveApplicationList = new List<string>();
+        foreach (var item in approvedLeaveApplications)
         {
-            ResponseYearlyStatisticsDTO responseYearlyStatisticsDTO = new ResponseYearlyStatisticsDTO();    
+            var totalLeaveDay = (item.EndDate - item.StartDate).TotalDays < 1
+                ? "1 Day"
+                : $"{(item.EndDate - item.StartDate).TotalDays} Days";
 
-            // calculate annual leave
-            List<ApplicationModel> approvedLeaveApplications = await _repositoryManager.applicationRepository
-                                                        .FindByCondition(a => a.EmployeeId == empId
-                                                        && a.Type.Equals(EnumTypes.ApplicationType.LEAVE)
-                                                        && a.Status.Equals(EnumTypes.ApplicationStatus.APPROVED)
-                                                        && a.CreatedDate.Year == year)
-                                                        .ToListAsync();
-
-            if(approvedLeaveApplications != null)
-            {
-                responseYearlyStatisticsDTO.CountAnnualLeave = approvedLeaveApplications.Count;
-                responseYearlyStatisticsDTO.DetailLeaveApplicationList = new List<string>();
-                foreach (ApplicationModel item in approvedLeaveApplications)
-                {
-                    // if employee leaves in a same day , return "1 Day"
-                    string totalLeaveDay = (item.EndDate - item.StartDate).TotalDays < 1 ? (1.ToString() + " Day") : ((item.EndDate - item.StartDate).TotalDays.ToString() + " Days");
-
-                    string apporvedLeaveResponse = item.StartDate.ToString("yyyy/MM/dd")
-                                                    + " - " + item.EndDate.ToString("yyyy/MM/dd")
-                                                    + " - " + totalLeaveDay;
-
-                    responseYearlyStatisticsDTO.DetailLeaveApplicationList.Add(apporvedLeaveResponse);
-                }
-            }
-
-            double requestedOvertimeInYear = 0;
-            double approvedOvertimeInYear = 0;
-
-            responseYearlyStatisticsDTO.DetailOvertimeApplicationList = new List<string>();
-
-            // display overtime
-            for (int month = 1; month <= 12; month++)
-            {
-
-                List<ApplicationModel> requestedOvertimeListInMonth = await _repositoryManager.applicationRepository
-                                                                            .FindByCondition(e => e.CreatedDate.Month == month
-                                                                            && e.Type.Equals(EnumTypes.ApplicationType.OVERTIME)
-                                                                            && e.Status.Equals(EnumTypes.ApplicationStatus.REQUESTED))
-                                                                            .ToListAsync();
-
-                List<ApplicationModel> approvedOvertimeListInMonth = await _repositoryManager.applicationRepository
-                                                                           .FindByCondition(e => e.CreatedDate.Month == month
-                                                                           && e.Type.Equals(EnumTypes.ApplicationType.OVERTIME)
-                                                                           && e.Status.Equals(EnumTypes.ApplicationStatus.APPROVED))
-                                                                           .ToListAsync();
-
-                if(requestedOvertimeListInMonth.Count != 0 && approvedOvertimeListInMonth.Count != 0)
-                {
-                    TimeSpan totalRequestedOvertime = new TimeSpan();
-                    TimeSpan totalApprovedOvertime = new TimeSpan();
-                    requestedOvertimeListInMonth.ForEach(a => totalRequestedOvertime += (a.EndDate - a.StartDate));
-                    approvedOvertimeListInMonth.ForEach(a => totalApprovedOvertime += (a.EndDate - a.StartDate));
-                    responseYearlyStatisticsDTO.DetailOvertimeApplicationList.Add(year + "/" + month + " " + totalRequestedOvertime.TotalHours.ToString("0.00") + "h" + "/" + totalApprovedOvertime.TotalHours.ToString("0.00") + "h");
-                    requestedOvertimeInYear += totalRequestedOvertime.TotalHours;
-                    approvedOvertimeInYear += totalApprovedOvertime.TotalHours;
-                }
-            }
-
-            responseYearlyStatisticsDTO.Overtime = requestedOvertimeInYear.ToString("0.00") + "h/" + approvedOvertimeInYear.ToString("0.00") + "h";
-
-            List<ApplicationModel> remoteApplicationList = await _repositoryManager.applicationRepository.FindByCondition(a => a.EmployeeId == empId
-                                                                                                    && a.CreatedDate.Year == year
-                                                                                                    && a.Type.Equals(EnumTypes.ApplicationType.REMOTE))
-                                                                                                    .ToListAsync();
-            if(remoteApplicationList.Count != 0)
-            {
-                TimeSpan totalRemoteDay = new TimeSpan();
-
-                remoteApplicationList.ForEach(a => totalRemoteDay += (a.EndDate - a.StartDate));
-
-                responseYearlyStatisticsDTO.CountRemoteDays = totalRemoteDay.Days;
-            }
-
-            return responseYearlyStatisticsDTO;
+            var approvedLeaveResponse = $"{item.StartDate:yyyy/MM/dd} - {item.EndDate:yyyy/MM/dd} - {totalLeaveDay}";
+            responseYearlyStatisticsDTO.DetailLeaveApplicationList.Add(approvedLeaveResponse);
         }
+    }
+   
+    double requestedOvertimeInYear = 0;
+    double approvedOvertimeInYear = 0;
+
+    responseYearlyStatisticsDTO.DetailOvertimeApplicationList = new List<string>();
+
+    // Display overtime
+    for (var month = 1; month <= 12; month++)
+    {
+        var requestedOvertimeListInMonth = await _repositoryManager.applicationRepository
+            .FindByCondition(e => e.CreatedDate.Month == month
+                                  && e.CreatedDate.Year == year
+                                  && e.Type == EnumTypes.ApplicationType.OVERTIME
+                                  && e.Status == EnumTypes.ApplicationStatus.REQUESTED)
+            .ToListAsync();
+
+        var approvedOvertimeListInMonth = await _repositoryManager.applicationRepository
+            .FindByCondition(e => e.CreatedDate.Month == month
+                                  && e.CreatedDate.Year == year
+                                  && e.Type == EnumTypes.ApplicationType.OVERTIME
+                                  && e.Status == EnumTypes.ApplicationStatus.APPROVED)
+            .ToListAsync();
+
+        if (requestedOvertimeListInMonth.Count != 0 && approvedOvertimeListInMonth.Count != 0)
+        {
+            var totalRequestedOvertime = requestedOvertimeListInMonth.Aggregate(TimeSpan.Zero, (sum, a) => sum + (a.EndDate - a.StartDate));
+            var totalApprovedOvertime = approvedOvertimeListInMonth.Aggregate(TimeSpan.Zero, (sum, a) => sum + (a.EndDate - a.StartDate));
+
+            responseYearlyStatisticsDTO.DetailOvertimeApplicationList.Add($"{year}/{month} {totalRequestedOvertime.TotalHours:0.00}h/{totalApprovedOvertime.TotalHours:0.00}h");
+            requestedOvertimeInYear += totalRequestedOvertime.TotalHours;
+            approvedOvertimeInYear += totalApprovedOvertime.TotalHours;
+        }
+    }
+
+    responseYearlyStatisticsDTO.Overtime = $"{requestedOvertimeInYear:0.00}h/{approvedOvertimeInYear:0.00}h";
+
+    var remoteApplicationList = await _repositoryManager.applicationRepository
+        .FindByCondition(a => a.EmployeeId == empId
+                              && a.CreatedDate.Year == year
+                              && a.Type == EnumTypes.ApplicationType.REMOTE)
+        .ToListAsync();
+
+    if (remoteApplicationList.Count != 0)
+    {
+        var totalRemoteDay = remoteApplicationList.Aggregate(TimeSpan.Zero, (sum, a) => sum + (a.EndDate - a.StartDate));
+        responseYearlyStatisticsDTO.CountRemoteDays = totalRemoteDay.Days;
+    }
+
+    return responseYearlyStatisticsDTO;
+}
+
+
 
     }
 }
